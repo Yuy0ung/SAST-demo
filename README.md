@@ -28,10 +28,10 @@
 
 污点追踪效果与IR展示：
 
-![QQ_1767512664879](https://yuy0ung.oss-cn-chengdu.aliyuncs.com/QQ_1767512664879.png)
+![image1](https://yuy0ung.oss-cn-chengdu.aliyuncs.com/QQ_1767512664879.png)
 
 支持生成CFG，可以查看每个basic block的IR：
-![QQ_1767513062423](https://yuy0ung.oss-cn-chengdu.aliyuncs.com/QQ_1767513062423.png)
+![image2](https://yuy0ung.oss-cn-chengdu.aliyuncs.com/QQ_1767513062423.png)
 
 ## 技术原理与实现
 
