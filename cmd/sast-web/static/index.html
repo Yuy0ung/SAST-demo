@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SAST Demo - Taint Analysis Viewer</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; height: 100vh; margin: 0; overflow: hidden; }
+        
+        /* Layout */
+        #sidebar { width: 300px; background: #f8f9fa; border-right: 1px solid #ddd; display: flex; flex-direction: column; }
+        #code-panel { flex: 1; display: flex; flex-direction: column; border-right: 1px solid #ddd; overflow: hidden; }
+        #graph-panel { width: 400px; background: #fff; overflow-y: auto; padding: 10px; }
+
+        /* Sidebar Components */
+        .panel-header { padding: 15px; background: #e9ecef; border-bottom: 1px solid #ddd; font-weight: bold; }
+        .config-area { padding: 15px; border-bottom: 1px solid #ddd; }
+        .vuln-list { flex: 1; overflow-y: auto; padding: 10px; }
+        
+        .vuln-item { 
+            background: #fff; border: 1px solid #ddd; border-left: 4px solid #dc3545; 
+            margin-bottom: 10px; padding: 10px; cursor: pointer; border-radius: 4px;
+            transition: background 0.2s;
+        }
+        .vuln-item:hover { background: #f1f1f1; }
+        .vuln-item.active { background: #e8f0fe; border-color: #0d6efd; }
+        .vuln-title { font-weight: bold; color: #dc3545; margin-bottom: 5px; }
+        
+        /* Path Steps */
+        .path-steps { display: none; margin-top: 10px; padding-left: 10px; border-left: 2px solid #ccc; }
+        .vuln-item.active .path-steps { display: block; }
+        .step { padding: 4px 8px; margin: 2px 0; cursor: pointer; font-size: 13px; border-radius: 3px; }
+        .step:hover { background: #ddd; }
+        .step.active { background: #ffeba7; font-weight: bold; }
+        .step-code { font-family: monospace; color: #555; }
+
+        /* Code Viewer */
+        #code-container { flex: 1; overflow: auto; background: #282c34; color: #abb2bf; position: relative; }
+        #code-content { margin: 0; padding: 20px; font-family: 'Consolas', 'Monaco', monospace; font-size: 14px; line-height: 1.5; counter-reset: line; }
+        .code-line { display: block; white-space: pre; min-height: 1.5em; padding: 0 10px; }
+        .code-line::before {
+            counter-increment: line;
+            content: counter(line);
+            display: inline-block;
+            width: 40px;
+            margin-right: 20px;
+            color: #5c6370;
+            text-align: right;
+            user-select: none;
+        }
+        .highlight-line { background-color: #3e4451; border: 1px solid #d19a66; }
+        .taint-source { background-color: rgba(220, 53, 69, 0.2); }
+        .taint-sink { background-color: rgba(220, 53, 69, 0.4); }
+
+        /* Graph & IR */
+        .block { border: 1px solid #ccc; margin: 5px 0; padding: 5px; background: #f9f9f9; font-size: 12px; }
+        .inst { font-family: monospace; white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+
+<!-- Left: Vulnerabilities -->
+<div id="sidebar">
+    <div class="panel-header">SAST Scanner</div>
+    <div class="config-area">
+        <input type="text" id="filePath" value="examples/go/vuln.go" style="width: 95%; margin-bottom: 5px; padding: 5px;">
+        <button onclick="analyze()" style="width: 100%; padding: 5px; cursor: pointer;">Scan File</button>
+    </div>
+    <div id="vulns" class="vuln-list"></div>
+</div>
+
+<!-- Middle: Code Viewer -->
+<div id="code-panel">
+    <div class="panel-header" id="file-name-header">Source Code</div>
+    <div id="code-container">
+        <div id="code-content">Select a vulnerability to view code...</div>
+    </div>
+</div>
+
+<!-- Right: Graph & Details -->
+<div id="graph-panel">
+    <div class="panel-header">Control Flow Graph</div>
+    <div id="mermaid-graph" class="mermaid"></div>
+    
+    <div class="panel-header" style="margin-top: 20px;">IR Instructions</div>
+    <div id="ir-view"></div>
+</div>
+
+<script>
+    mermaid.initialize({ startOnLoad: false });
+
+    let currentFileContent = '';
+    let currentFilePath = '';
+
+    async function analyze() {
+        const file = document.getElementById('filePath').value;
+        const res = await fetch(`/api/analyze?file=${encodeURIComponent(file)}`);
+        const data = await res.json();
+        
+        // Load file content immediately
+        await loadFile(data.file);
+
+        renderVulns(data.vulnerabilities);
+        renderIR(data.ir);
+        renderCFG(data.ir);
+    }
+
+    async function loadFile(path) {
+        if (path === currentFilePath && currentFileContent) return;
+        
+        try {
+            const res = await fetch(`/api/file?path=${encodeURIComponent(path)}`);
+            if (!res.ok) throw new Error('Failed to load file');
+            const text = await res.text();
+            
+            currentFilePath = path;
+            currentFileContent = text;
+            renderCode(text);
+            document.getElementById('file-name-header').textContent = path;
+        } catch (e) {
+            console.error(e);
+            document.getElementById('code-content').textContent = "Error loading file: " + e.message;
+        }
+    }
+
+    function renderCode(text) {
+        const container = document.getElementById('code-content');
+        container.innerHTML = '';
+        
+        const lines = text.split('\n');
+        lines.forEach((line, index) => {
+            const div = document.createElement('div');
+            div.className = 'code-line';
+            div.id = `line-${index + 1}`;
+            div.textContent = line;
+            container.appendChild(div);
+        });
+    }
+
+    function highlightLine(lineNum, type = 'normal') {
+        // Clear previous highlights
+        document.querySelectorAll('.highlight-line').forEach(el => el.classList.remove('highlight-line'));
+        
+        const el = document.getElementById(`line-${lineNum}`);
+        if (el) {
+            el.classList.add('highlight-line');
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    }
+
+    function renderVulns(vulns) {
+        const container = document.getElementById('vulns');
+        container.innerHTML = '';
+        
+        if (!vulns || vulns.length === 0) {
+            container.innerHTML = '<div style="padding:10px; color:green">No vulnerabilities found.</div>';
+            return;
+        }
+        
+        vulns.forEach((v, index) => {
+            const div = document.createElement('div');
+            div.className = 'vuln-item';
+            div.onclick = (e) => {
+                // Toggle active state
+                document.querySelectorAll('.vuln-item').forEach(el => el.classList.remove('active'));
+                div.classList.add('active');
+                
+                // Highlight Sink by default
+                highlightLine(v.Sink.Line);
+            };
+
+            let pathHtml = '<div class="path-steps">';
+            v.Path.forEach((node, i) => {
+                const label = i === 0 ? 'Source' : (i === v.Path.length - 1 ? 'Sink' : 'Step');
+                pathHtml += `
+                    <div class="step" onclick="event.stopPropagation(); highlightLine(${node.Line})">
+                        <span style="color:#888; font-size:10px;">${label} (L${node.Line})</span><br>
+                        <span class="step-code">${node.Code}</span>
+                    </div>
+                `;
+            });
+            pathHtml += '</div>';
+
+            div.innerHTML = `
+                <div class="vuln-title">${v.Type}</div>
+                <div style="font-size:12px; color:#666;">
+                    Severity: ${v.Severity}<br>
+                    Line: ${v.Line}
+                </div>
+                ${pathHtml}
+            `;
+            container.appendChild(div);
+        });
+    }
+
+    function renderIR(ir) {
+        const container = document.getElementById('ir-view');
+        container.innerHTML = '';
+        if (!ir || !ir.functions) return;
+
+        for (const [name, fn] of Object.entries(ir.functions)) {
+            const div = document.createElement('div');
+            div.innerHTML = `<strong>Func: ${name}</strong>`;
+            Object.keys(fn.blocks).sort().forEach(bid => {
+                const bb = fn.blocks[bid];
+                const bDiv = document.createElement('div');
+                bDiv.className = 'block';
+                bDiv.innerHTML = `<em>${bid}</em><br>` + 
+                    bb.instructions.map(i => `<div class="inst">${i.code}</div>`).join('');
+                div.appendChild(bDiv);
+            });
+            container.appendChild(div);
+        }
+    }
+
+    function renderCFG(ir) {
+        if (!ir || !ir.functions) return;
+        let graphDef = 'graph TD\n';
+        for (const [name, fn] of Object.entries(ir.functions)) {
+            graphDef += `subgraph ${name}\n`;
+            for (const [bid, bb] of Object.entries(fn.blocks)) {
+                let label = `${bid}<br/>` + bb.instructions.map(i => i.code.replace(/"/g, "'").slice(0,20)).join('<br/>');
+                graphDef += `${bid}["${label}"]\n`;
+                bb.successors.forEach(succ => graphDef += `${bid} --> ${succ}\n`);
+            }
+            graphDef += 'end\n';
+        }
+        const graphDiv = document.getElementById('mermaid-graph');
+        graphDiv.innerHTML = graphDef;
+        graphDiv.removeAttribute('data-processed');
+        mermaid.render('mermaid-graph-svg', graphDef).then(r => graphDiv.innerHTML = r.svg);
+    }
+
+    // Initial load
+    analyze();
+</script>
+
+</body>
+</html>
