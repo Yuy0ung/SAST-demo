@@ -28,21 +28,21 @@
 填入文件路径即可进行漏洞分析
 
 AST语法树的查看：
-![QQ_1767871509744](https://yuy0ung.oss-cn-chengdu.aliyuncs.com/QQ_1767871509744.png)
+<img src="https://yuy0ung.oss-cn-chengdu.aliyuncs.com/QQ_1767871509744.png" alt="QQ_1767871509744" />
 
 污点追踪效果与IR展示：
 
-![image1](https://yuy0ung.oss-cn-chengdu.aliyuncs.com/QQ_1767512664879.png)
+<img src="https://yuy0ung.oss-cn-chengdu.aliyuncs.com/QQ_1767512664879.png" alt="image1" />
 
 支持生成CFG，可以查看每个basic block的IR：
-![image2](https://yuy0ung.oss-cn-chengdu.aliyuncs.com/QQ_1767513062423.png)
+<img src="https://yuy0ung.oss-cn-chengdu.aliyuncs.com/QQ_1767513062423.png" alt="image2" />
 
 整体CFG如下：
 
-![image-20260108195312488](https://yuy0ung.oss-cn-chengdu.aliyuncs.com/image-20260108195312488.png)
+<img src="https://yuy0ung.oss-cn-chengdu.aliyuncs.com/image-20260108195312488.png" alt="image-20260108195312488" />
 
 存在对应漏洞的basic blocks会红色高亮：
-![img](https://yuy0ung.oss-cn-chengdu.aliyuncs.com/QQ_1767871013331-20260108195259927.png)
+<img src="https://yuy0ung.oss-cn-chengdu.aliyuncs.com/QQ_1767871013331-20260108195259927.png" alt="img" />
 
 ## 技术原理与实现
 
