@@ -39,10 +39,10 @@ AST语法树的查看：
 
 整体CFG如下：
 
-![QQ_1767870963427](https://yuy0ung.oss-cn-chengdu.aliyuncs.com/QQ_1767870963427.png)
+![image3](https://yuy0ung.oss-cn-chengdu.aliyuncs.com/QQ_1767870963427.png)
 
 存在对应漏洞的basic blocks会红色高亮：
-![QQ_1767871013331](https://yuy0ung.oss-cn-chengdu.aliyuncs.com/QQ_1767871013331.png)
+![image4](https://yuy0ung.oss-cn-chengdu.aliyuncs.com/QQ_1767871013331.png)
 
 ## 技术原理与实现
 
