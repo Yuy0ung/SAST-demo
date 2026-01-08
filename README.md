@@ -6,6 +6,7 @@
 
 - **多语言支持**: 支持 **Go** (原生 AST 解析) 和 **Java** (自定义 IR 生成) 的静态分析。
 - **深度可视化**:
+  - **AST (抽象语法树)**: 交互式展示代码的语法结构，支持节点与源代码的联动高亮。
   - **CFG (控制流图)**: 使用 Mermaid.js 渲染函数的控制流结构，支持缩放和平移。
   - **IR (中间表示)**: 展示类似于汇编的线性中间代码，便于理解底层分析逻辑。
   - **交互式污点追踪**: 在源代码中高亮显示从 Source (输入源) 到 Sink (漏洞点) 的完整数据流路径。
@@ -55,7 +56,9 @@ graph TD
     AST -->|"IR Generator"| IR["统一中间表示 (Instruction)"]
     IR -->|"CFG Builder"| CFG["控制流图 (Basic Blocks)"]
     IR -->|"Use-Def Analysis"| UseDef["使用-定义链"]
-    UseDef -->|"Taint Engine"| Vulns["漏洞报告"]
+    UseDef -->|"Taint Analysis"| Candidate["候选路径"]
+    Candidate -->|"CFG Reachability"| Validator["路径验证器"]
+    Validator -->|"Verified"| Vulns["漏洞报告"]
 ```
 
 ### 2. 核心组件详解
@@ -74,11 +77,14 @@ graph TD
   - 自动生成对应的 `OpBranch` 和 `OpJump` 指令，从而构建出完整的 CFG，解决了传统正则匹配无法理解控制流的缺陷。
 
 #### C. 污点分析引擎 (Taint Engine)
-- **Use-Def Chain (使用-定义链)**: 引擎首先遍历 IR，建立变量的定义与使用关系。
-- **传播算法**:
+- **混合分析模式 (Hybrid Analysis)**: 结合了 **Use-Def Chain (数据流)** 的高效性与 **CFG (控制流)** 的精确性。
+- **分析流程**:
   1. **Source 识别**: 根据配置规则 (Regex) 标记引入污点的指令 (如 `request.getParameter`)。
-  2. **正向传播**: 基于 Use-Def 链，使用 BFS (广度优先搜索) 追踪污点数据流向的所有后续指令。
-  3. **Sink 匹配**: 如果污点流向了定义的 Sink 指令 (如 `sql.execute`)，则判定为漏洞。
+  2. **数据流追踪 (Data Flow)**: 基于 Use-Def 链快速寻找从 Source 到 Sink 的潜在数据依赖路径 (Candidate Path)。
+  3. **控制流验证 (Control Flow Validation)**: 
+     - 对候选路径进行**CFG 可达性检查 (Reachability Check)**。
+     - 验证路径上的每一步是否在控制流图上真实可达，剔除死代码或逻辑上不可执行的分支（如 `if(false)`）中的误报。
+  4. **漏洞判定**: 只有同时满足数据依赖和控制流可达性的路径才会被报告为漏洞。
 
 ### 3. UI
 - **Frontend**: Vue 3 + Vite + Ant Design Vue。

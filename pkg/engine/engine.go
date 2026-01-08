@@ -94,6 +94,11 @@ func (e *Engine) AnalyzeIR(prog *core.ProgramIR, filePath string) []core.Vulnera
 			if e.matchesAny(inst.Code, sourceRegexes) {
 				// Start Taint Tracking
 				if path := e.findPathToSinkIR(inst, sinkRegexes, useMap); path != nil {
+					// Validate Control Flow (CFG Reachability)
+					if !e.validatePath(path, prog, instToBlock, instToFunc) {
+						continue
+					}
+
 					sinkInst := path[len(path)-1]
 					vulns = append(vulns, core.Vulnerability{
 						Type:        rule.Name,
@@ -212,4 +217,90 @@ func (e *Engine) pathInstToNode(path []*core.Instruction, file string, instToBlo
 		nodes = append(nodes, e.instToNode(i, file, instToBlock, instToFunc))
 	}
 	return nodes
+}
+
+// validatePath checks if the taint path is valid according to the CFG
+func (e *Engine) validatePath(path []*core.Instruction, prog *core.ProgramIR, instToBlock map[string]string, instToFunc map[string]string) bool {
+	for i := 0; i < len(path)-1; i++ {
+		curr := path[i]
+		next := path[i+1]
+
+		fName1 := instToFunc[curr.ID]
+		fName2 := instToFunc[next.ID]
+
+		// Skip inter-procedural checks for now
+		if fName1 != fName2 {
+			continue
+		}
+
+		fn := prog.Functions[fName1]
+		if fn == nil {
+			continue
+		}
+
+		b1ID := instToBlock[curr.ID]
+		b2ID := instToBlock[next.ID]
+
+		if b1ID == b2ID {
+			// Same block: check order
+			block := fn.Blocks[b1ID]
+			if !e.isOrderedInBlock(curr, next, block) {
+				return false
+			}
+		} else {
+			// Different blocks: check CFG reachability
+			if !e.isReachable(b1ID, b2ID, fn) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// isOrderedInBlock checks if a comes before b in the block
+func (e *Engine) isOrderedInBlock(a, b *core.Instruction, block *core.BasicBlock) bool {
+	foundA := false
+	for _, inst := range block.Instructions {
+		if inst.ID == a.ID {
+			foundA = true
+		}
+		if inst.ID == b.ID {
+			return foundA // If foundA is true, A is before B. If false, B is before A (invalid).
+		}
+	}
+	return false
+}
+
+// isReachable checks if startBlock can reach endBlock in the function CFG
+func (e *Engine) isReachable(startID, endID string, fn *core.FunctionIR) bool {
+	if startID == endID {
+		return true
+	}
+
+	visited := make(map[string]bool)
+	queue := []string{startID}
+	visited[startID] = true
+
+	for len(queue) > 0 {
+		currID := queue[0]
+		queue = queue[1:]
+
+		if currID == endID {
+			return true
+		}
+
+		currBlock, ok := fn.Blocks[currID]
+		if !ok {
+			continue
+		}
+
+		for _, succID := range currBlock.Successors {
+			if !visited[succID] {
+				visited[succID] = true
+				queue = append(queue, succID)
+			}
+		}
+	}
+
+	return false
 }
