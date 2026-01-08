@@ -63,6 +63,10 @@ func (e *Engine) AnalyzeIR(prog *core.ProgramIR, filePath string) []core.Vulnera
 	// 1. Build Use-Def chains
 	// Map: VariableName -> [Instructions that use it]
 	useMap := make(map[string][]*core.Instruction)
+	// Map: InstructionID -> BlockID
+	instToBlock := make(map[string]string)
+	// Map: InstructionID -> FunctionName
+	instToFunc := make(map[string]string)
 	// List of all instructions for linear scanning
 	var allInsts []*core.Instruction
 
@@ -70,6 +74,8 @@ func (e *Engine) AnalyzeIR(prog *core.ProgramIR, filePath string) []core.Vulnera
 		for _, bb := range fn.Blocks {
 			for _, inst := range bb.Instructions {
 				allInsts = append(allInsts, inst)
+				instToBlock[inst.ID] = bb.ID
+				instToFunc[inst.ID] = fn.Name
 				for _, op := range inst.Operands {
 					useMap[op] = append(useMap[op], inst)
 				}
@@ -95,9 +101,9 @@ func (e *Engine) AnalyzeIR(prog *core.ProgramIR, filePath string) []core.Vulnera
 						File:        filePath,
 						Line:        inst.Line,
 						Description: rule.Description,
-						Source:      e.instToNode(inst, filePath),
-						Sink:        e.instToNode(sinkInst, filePath),
-						Path:        e.pathInstToNode(path, filePath),
+						Source:      e.instToNode(inst, filePath, instToBlock, instToFunc),
+						Sink:        e.instToNode(sinkInst, filePath, instToBlock, instToFunc),
+						Path:        e.pathInstToNode(path, filePath, instToBlock, instToFunc),
 					})
 				}
 			}
@@ -188,20 +194,22 @@ func (e *Engine) findPathToSinkIR(start *core.Instruction, sinkRegexes []*regexp
 	return nil
 }
 
-func (e *Engine) instToNode(i *core.Instruction, file string) *core.Node {
+func (e *Engine) instToNode(i *core.Instruction, file string, instToBlock map[string]string, instToFunc map[string]string) *core.Node {
 	return &core.Node{
-		ID:   i.ID,
-		Type: core.NodeCall, // Generic
-		Code: i.Code,
-		Line: i.Line,
-		File: file,
+		ID:       i.ID,
+		Type:     core.NodeCall, // Generic
+		Code:     i.Code,
+		Line:     i.Line,
+		File:     file,
+		Function: instToFunc[i.ID],
+		BlockID:  instToBlock[i.ID],
 	}
 }
 
-func (e *Engine) pathInstToNode(path []*core.Instruction, file string) []*core.Node {
+func (e *Engine) pathInstToNode(path []*core.Instruction, file string, instToBlock map[string]string, instToFunc map[string]string) []*core.Node {
 	var nodes []*core.Node
 	for _, i := range path {
-		nodes = append(nodes, e.instToNode(i, file))
+		nodes = append(nodes, e.instToNode(i, file, instToBlock, instToFunc))
 	}
 	return nodes
 }

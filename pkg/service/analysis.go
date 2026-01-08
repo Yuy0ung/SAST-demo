@@ -13,7 +13,8 @@ import (
 
 type AnalysisResult struct {
 	File            string               `json:"file"`
-	IR              *core.ProgramIR      `json:"ir"` // Optional, nil for Java currently
+	IR              *core.ProgramIR      `json:"ir"`
+	AST             *core.ASTNode        `json:"ast"` // Abstract Syntax Tree
 	Vulnerabilities []core.Vulnerability `json:"vulnerabilities"`
 	Logs            []string             `json:"logs"`
 }
@@ -47,6 +48,16 @@ func Analyze(filePath string) (*AnalysisResult, error) {
 		result.IR = ir
 		result.Logs = append(result.Logs, fmt.Sprintf("Generated IR with %d functions", len(ir.Functions)))
 
+		// AST Generation
+		result.Logs = append(result.Logs, "Generating Go AST...")
+		astGen := golang.NewASTGenerator()
+		astRoot, err := astGen.Generate(absPath)
+		if err == nil {
+			result.AST = astRoot
+		} else {
+			result.Logs = append(result.Logs, fmt.Sprintf("Go AST Gen failed: %v", err))
+		}
+
 		vulns = eng.AnalyzeIR(ir, absPath)
 		result.Logs = append(result.Logs, fmt.Sprintf("Engine found %d vulnerabilities", len(vulns)))
 
@@ -59,6 +70,16 @@ func Analyze(filePath string) (*AnalysisResult, error) {
 		}
 		result.IR = ir
 		result.Logs = append(result.Logs, fmt.Sprintf("Generated IR with %d functions", len(ir.Functions)))
+
+		// AST Generation
+		result.Logs = append(result.Logs, "Generating Java AST...")
+		astGen := java.NewJavaASTGenerator()
+		astRoot, err := astGen.Generate(absPath)
+		if err == nil {
+			result.AST = astRoot
+		} else {
+			result.Logs = append(result.Logs, fmt.Sprintf("Java AST Gen failed: %v", err))
+		}
 
 		vulns = eng.AnalyzeIR(ir, absPath)
 		result.Logs = append(result.Logs, fmt.Sprintf("Engine found %d vulnerabilities", len(vulns)))

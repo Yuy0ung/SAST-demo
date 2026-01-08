@@ -9,7 +9,7 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import org.hibernate.Session;
 
-public class ComplexVulns {
+public class vulns {
 
     // 1. XSS (Reflected)
     public void xss(HttpServletRequest request, HttpServletResponse response) throws IOException {

@@ -32,6 +32,7 @@ type Node struct {
 	Line      int
 	File      string
 	Function  string // Enclosing function name
+	BlockID   string // Basic Block ID in CFG
 }
 
 // Edge represents a connection between two nodes

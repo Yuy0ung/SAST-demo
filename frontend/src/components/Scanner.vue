@@ -107,6 +107,22 @@
                    </div>
                 </div>
               </a-tab-pane>
+              <a-tab-pane key="ast" tab="AST" v-if="astData">
+                <div class="ast-container">
+                    <a-tree
+                        v-if="astData"
+                        :tree-data="[astData]"
+                        :default-expand-all="true"
+                        :show-line="true"
+                        @select="onAstSelect"
+                    >
+                        <template #title="{ title, line }">
+                            <span class="ast-node-title">{{ title }}</span>
+                            <span v-if="line > 0" class="ast-node-line"> :L{{ line }}</span>
+                        </template>
+                    </a-tree>
+                </div>
+              </a-tab-pane>
             </a-tabs>
           </div>
         </a-layout-content>
@@ -136,12 +152,21 @@ const fileContent = ref('');
 const vulnerabilities = ref([]);
 const logs = ref([]);
 const irData = ref(null);
+const astData = ref(null);
 const loading = ref(false);
 const selectedVulnIndex = ref(-1);
 const highlightedLine = ref(-1);
+const highlightedBlocks = ref(new Set());
+const activeFunction = ref(null);
 const activeTab = ref('logs');
 const cfgWrapper = ref(null);
 const codeContentRef = ref(null);
+
+watch(activeTab, (newTab) => {
+  if (newTab === 'graph' && irData.value) {
+    nextTick(() => renderCFG());
+  }
+});
 
 const fileLines = computed(() => {
   return fileContent.value ? fileContent.value.split('\n') : [];
@@ -172,8 +197,11 @@ const scanFile = async () => {
   vulnerabilities.value = [];
   logs.value = [];
   irData.value = null;
+  astData.value = null;
   selectedVulnIndex.value = -1;
   highlightedLine.value = -1;
+  highlightedBlocks.value = new Set();
+  activeFunction.value = null;
 
   try {
     // 1. Analyze
@@ -183,6 +211,7 @@ const scanFile = async () => {
     vulnerabilities.value = data.vulnerabilities || [];
     logs.value = data.logs || [];
     irData.value = data.ir;
+    astData.value = data.ast;
     currentFile.value = data.file;
 
     // 2. Load File Content
@@ -212,7 +241,48 @@ const selectVuln = (index) => {
   const v = vulnerabilities.value[index];
   if (v) {
     highlightLine(v.Sink.Line);
+
+    // Collect blocks and function for CFG highlighting
+    const blocks = new Set();
+    let funcName = null;
+    
+    // Check Source
+    if (v.Source) {
+        if (v.Source.BlockID) blocks.add(v.Source.BlockID);
+        if (v.Source.Function) funcName = v.Source.Function;
+    }
+
+    // Check Path
+    if (v.Path) {
+      v.Path.forEach(node => {
+         if (node.BlockID) blocks.add(node.BlockID);
+         if (node.Function && !funcName) funcName = node.Function;
+      });
+    }
+    
+    // Check Sink
+    if (v.Sink) {
+        if (v.Sink.BlockID) blocks.add(v.Sink.BlockID);
+        if (v.Sink.Function && !funcName) funcName = v.Sink.Function;
+    }
+
+    highlightedBlocks.value = blocks;
+    // Update active function only if found, otherwise keep full view or previous
+    if (funcName) {
+       activeFunction.value = funcName;
+    }
+    
+    // Re-render CFG if visible
+    if (activeTab.value === 'graph') {
+       nextTick(() => renderCFG());
+    }
   }
+};
+
+const onAstSelect = (selectedKeys, { node }) => {
+    if (node.line > 0) {
+        highlightLine(node.line);
+    }
 };
 
 const highlightLine = (line) => {
@@ -241,8 +311,14 @@ const renderCFG = async () => {
   // Styling
   graphDef += 'classDef default fill:#fff,stroke:#333,stroke-width:1px;\n';
   graphDef += 'classDef highlighted fill:#e6f7ff,stroke:#1890ff,stroke-width:2px;\n';
+  graphDef += 'classDef active fill:#ffcccc,stroke:#ff0000,stroke-width:3px;\n';
 
-  for (const [name, fn] of Object.entries(irData.value.functions)) {
+  // Determine which functions to render
+  const functionsToRender = activeFunction.value && irData.value.functions[activeFunction.value]
+      ? { [activeFunction.value]: irData.value.functions[activeFunction.value] }
+      : irData.value.functions;
+
+  for (const [name, fn] of Object.entries(functionsToRender)) {
     graphDef += `subgraph ${name}\n`;
     graphDef += `direction TB\n`; // Ensure top-bottom inside subgraph
     for (const [bid, bb] of Object.entries(fn.blocks)) {
@@ -261,6 +337,12 @@ const renderCFG = async () => {
       
       // Add click event class
       graphDef += `${bid}["${label}"]:::clickable\n`;
+      
+      // Add style if highlighted
+      if (highlightedBlocks.value.has(bid)) {
+          graphDef += `style ${bid} fill:#ffcccc,stroke:#ff0000,stroke-width:2px\n`;
+      }
+
       bb.successors.forEach(succ => {
         graphDef += `${bid} --> ${succ}\n`;
       });
@@ -476,7 +558,7 @@ code.hljs {
 }
 
 .cfg-wrapper {
-    height: calc(100vh - 200px); /* Adjust height */
+    height: calc(100vh); /* Adjust height */
     overflow: hidden; /* Panzoom handles movement */
     background: #fafafa;
     position: relative;
@@ -539,5 +621,25 @@ code.hljs {
     color: #5c6370; /* Grey */
     font-style: italic;
     margin-left: 10px;
+}
+
+.ast-container {
+    padding: 10px;
+    height: calc(100vh - 120px);
+    overflow-y: auto;
+    background: #fff;
+}
+
+.ast-node-title {
+    font-family: monospace;
+    font-size: 13px;
+    color: #333;
+}
+
+.ast-node-line {
+    color: #1890ff;
+    font-size: 11px;
+    margin-left: 8px;
+    cursor: pointer;
 }
 </style>
